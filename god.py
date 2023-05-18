@@ -1,10 +1,13 @@
-import traceback
 from googleapiclient.discovery import build
 from oauth2client import client, file, tools
 from googleapiclient.errors import HttpError
+import traceback
 import httplib2
-import pandas
 import json
+
+
+global responses
+
 
 httplib2.debuglevel = 4
 scopes = ['https://www.googleapis.com/auth/forms', 'https://www.googleapis.com/auth/spreadsheets',
@@ -18,7 +21,7 @@ if not creds:
 # build forms instance
 forms = build('forms', 'v1', credentials=creds)
 urmom = build('sheets', 'v4', credentials=creds)
-formID = input("Enter Form ID")
+formID = '1PaUqIlTJX6Fc_vWVlGNiRvdOWDI9NJDNkmcbvOhFNyE'
 
 try:
     responses = forms.forms().responses().list(formId=formID).execute()
@@ -31,10 +34,11 @@ except HttpError:  # Cannot try/except non BaseException
 '''
 begin the json-ing to sheet-ing
 '''
-with open('form_responses.json', 'r') as f:
-    helpme = json.load(f)
-    df = pandas.DataFrame.from_dict(helpme)
-    print(df)
-'''
-lost i am
-'''
+JOSN = json.loads(responses)
+rows = len(JOSN['responses'])
+columns = len(JOSN['responses'][0]['answers'])
+array = [[None for i in range(columns)] for j in range(rows)]
+# Iterate over the JSON object and populate the 2D array with the corresponding data.
+for i in range(rows):
+    for j in range(columns):
+        array[i][j] = JOSN['responses'][i]['answers'][j]['value']
