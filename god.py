@@ -23,13 +23,14 @@ forms = build('forms', 'v1', credentials=creds)
 urmom = build('sheets', 'v4', credentials=creds)
 formID = '1PaUqIlTJX6Fc_vWVlGNiRvdOWDI9NJDNkmcbvOhFNyE'
 
-try:
-    responses = forms.forms().responses().list(formId=formID).execute()
-    with open('form_responses.json', 'w') as f:
-        json.dump(responses, f)
-except HttpError:  # Cannot try/except non BaseException
-    print(f"Error retrieving {formID} Data")
-    print(traceback)
+responses = forms.forms().responses().list(formId=formID).execute()
+with open('form_responses.json', 'w') as f:
+    json.dump(responses, f)
+
+if HttpError:
+    print("HTTP ERROR")
+    quit()
+
 
 '''
 begin the json-ing to sheet-ing
@@ -42,3 +43,7 @@ array = [[None for i in range(columns)] for j in range(rows)]
 for i in range(rows):
     for j in range(columns):
         array[i][j] = JOSN['responses'][i]['answers'][j]['value']
+
+spreadsheet = urmom.spreadsheets().create(body={'title': 'Form Responses'}).execute()
+sheet = urmom.spreadsheets().get(spreadsheetId=spreadsheet['id']).execute()
+values = urmom.spreadsheets().values().update(spreadsheetId=spreadsheet['id'], range='A1:' + chr(ord('A') + columns - 1), body={'values': array}).execute()
