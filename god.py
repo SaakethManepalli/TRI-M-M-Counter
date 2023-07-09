@@ -1,49 +1,67 @@
 from googleapiclient.discovery import build
-from oauth2client import client, file, tools
-from googleapiclient.errors import HttpError
-import traceback
-import httplib2
+from google_auth_oauthlib.flow import InstalledAppFlow
 import json
 
-
-global responses
-
-
-httplib2.debuglevel = 4
-scopes = ['https://www.googleapis.com/auth/forms', 'https://www.googleapis.com/auth/spreadsheets',
+scopes = ['https://www.googleapis.com/auth/forms',
+          'https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/drive']
-store = file.Storage('token.json')
-creds = None
-if not creds:
-    flow = client.flow_from_clientsecrets('client_secrets.json', scopes)
-    creds = tools.run_flow(flow, store)
 
-# build forms instance
-forms = build('forms', 'v1', credentials=creds)
-urmom = build('sheets', 'v4', credentials=creds)
+# Load the client secrets from the client_secret.json file
+flow = InstalledAppFlow.from_client_secrets_file('secret.json', scopes=scopes)
+credentials = flow.run_local_server()
+
+# Build Forms and Sheets instances
+forms = build('forms', 'v1', credentials=credentials)
+sheets = build('sheets', 'v4', credentials=credentials)
+
 formID = '1PaUqIlTJX6Fc_vWVlGNiRvdOWDI9NJDNkmcbvOhFNyE'
+spreadsheetID = '1K8CnEoNG1nPKC_indjAZVN10WpiubQspN9X6ZgAHxIw'
 
+# Retrieve form responses
 responses = forms.forms().responses().list(formId=formID).execute()
 with open('form_responses.json', 'w') as f:
     json.dump(responses, f)
 
-if HttpError:
-    print("HTTP ERROR")
-    quit()
+# Begin processing the responses and storing them in the Google Sheets spreadsheet
+rows = len(responses['responses'])
+columns = len(responses['responses'][0]['answers'])
+array = [[None for _ in range(columns)] for _ in range(rows)]
 
+# Create a dictionary to store the event names and their corresponding column indices
+event_mapping = {}
+event_columns = []
 
-'''
-begin the json-ing to sheet-ing
-'''
-JOSN = json.loads(responses)
-rows = len(JOSN['responses'])
-columns = len(JOSN['responses'][0]['answers'])
-array = [[None for i in range(columns)] for j in range(rows)]
-# Iterate over the JSON object and populate the 2D array with the corresponding data.
-for i in range(rows):
-    for j in range(columns):
-        array[i][j] = JOSN['responses'][i]['answers'][j]['value']
+# Iterate over the responses and populate the 2D array with the corresponding data
+for i, response in enumerate(responses['responses']):
+    for j, question_id in enumerate(response['answers']):
+        answer = response['answers'][question_id]
+        if question_id == '745132d8' and 'textAnswers' in answer:
+            answer_value = answer['textAnswers']['answers'][0]['value']
+            if answer_value.lower() == 'yes':
+                value = 'Yes'
+            else:
+                value = 'No'
+        elif question_id == '0f043af5' and 'textAnswers' in answer:
+            event = answer['textAnswers']['answers'][0]['value']
+            if event not in event_mapping:
+                event_mapping[event] = len(event_columns)
+                event_columns.append(event)
+        elif question_id == '0cf1a445' and 'textAnswers' in answer:
+            name = answer['textAnswers']['answers'][0]['value']
 
-spreadsheet = urmom.spreadsheets().create(body={'title': 'Form Responses'}).execute()
-sheet = urmom.spreadsheets().get(spreadsheetId=spreadsheet['id']).execute()
-values = urmom.spreadsheets().values().update(spreadsheetId=spreadsheet['id'], range='A1:' + chr(ord('A') + columns - 1), body={'values': array}).execute()
+    # Find the index of the event column for the current response
+    event_index = event_mapping.get(event)
+
+    # Update the corresponding cell in the array with the answer value
+    if event_index is not None:
+        array[i][event_index] = value
+
+# Create a new row to store the event names
+header_row = ['Name'] + event_columns
+
+# Insert the header row at the beginning of the array
+array.insert(0, header_row)
+
+# Update the existing spreadsheet with the array of values
+range_name = 'Sheet1!A1:' + chr(ord('A') + columns - 1)
+values = sheets.spreadsheets().values().update(spreadsheetId=spreadsheetID, range=range_name, valueInputOption='RAW', body={'values': array}).execute()
